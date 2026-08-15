@@ -66,10 +66,15 @@ class QueryEngine:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
-            max_tokens=64,
+            max_tokens=400,
             temperature=0.1,
         )
-        return response.choices[0].message.content.strip()
+        cleaned = response.choices[0].message.content.strip()
+        # Lightning occasionally strips a short/ambiguous query (e.g. "test
+        # memory") down to nothing if it reads as filler. Fall back to the
+        # raw query rather than sending an empty string to the embedder,
+        # which rejects blank input outright.
+        return cleaned if cleaned else raw_query
 
     def resolve_results(
         self, raw_query: str, results: list[tuple[Memory, float]]
@@ -117,12 +122,19 @@ class QueryEngine:
                     "content": f"User asked: '{raw_query}'\n\nCandidate memories:\n{candidate_descriptions}",
                 },
             ],
-            max_tokens=100,
+            max_tokens=500,
             temperature=0.4,
         )
 
+        message = response.choices[0].message.content.strip()
+        if not message:
+            # Fallback if Lightning still doesn't finish in time — a plain
+            # listing beats an empty response.
+            names = ", ".join(m.note or m.caption[:40] for m in candidates)
+            message = f"I found a few close matches — did you mean: {names}?"
+
         return QueryResult(
             status="ambiguous",
-            message=response.choices[0].message.content.strip(),
+            message=message,
             candidates=candidates,
         )

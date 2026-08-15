@@ -64,8 +64,14 @@ class VLMCaptioner:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": content}],
-            max_tokens=300,
+            max_tokens=1500,
             temperature=0.3,
         )
 
-        return response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        if content is None:
+            # Model ran out of tokens before finishing — fall back to the
+            # reasoning trace if available, rather than crashing. If you see
+            # this path taken often, max_tokens is still too tight.
+            content = getattr(response.choices[0].message, "reasoning", "") or ""
+        return content.strip()

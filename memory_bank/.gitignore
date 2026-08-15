@@ -1,0 +1,16 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Memory bank data — personal content, never commit
+data/
+
+# Video files (large, and often personal/test footage)
+*.mp4
+*.mov
+*.avi
+
+# OS
+.DS_Store
