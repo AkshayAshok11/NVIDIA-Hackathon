@@ -15,23 +15,50 @@ Supports two modes:
     cleaned query text (the original approach) gives it nothing concrete
     to resolve against.
 
+--chat sessions persist to disk (data/chat_history.json) after every turn,
+and auto-load on the next launch — so if the terminal/SSH session drops or
+the machine reboots mid-conversation, resuming `--chat` picks up where you
+left off instead of losing context. Use --new to explicitly start a fresh
+conversation (clears any saved history first).
+
 Usage:
     python3 scripts/query_memory.py "I want to revisit my 18th birthday"
     python3 scripts/query_memory.py --chat
+    python3 scripts/query_memory.py --chat --new
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from memory_pipeline import gpu_swap
+from memory_pipeline import config, gpu_swap
 from memory_pipeline.embedder import Embedder
 from memory_pipeline.memory_store import MemoryStore
 from memory_pipeline.query_engine import QueryEngine
+
+CHAT_HISTORY_PATH = config.DATA_DIR / "chat_history.json"
+
+
+def _load_history() -> list[dict]:
+    if not CHAT_HISTORY_PATH.exists():
+        return []
+    try:
+        with open(CHAT_HISTORY_PATH, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        # Corrupted or unreadable — safer to start fresh than crash.
+        return []
+
+
+def _save_history(history: list[dict]) -> None:
+    CHAT_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(CHAT_HISTORY_PATH, "w") as f:
+        json.dump(history, f, indent=2)
 
 
 def _summarize_for_history(result, results) -> str:
@@ -97,10 +124,11 @@ def query(raw_query: str) -> None:
     run_query(raw_query, engine, embedder, store)
 
 
-def chat() -> None:
+def chat(start_fresh: bool = False) -> None:
     """Interactive multi-turn mode. Maintains real history — including what
     was actually retrieved — so follow-ups like 'no, the other one' have
-    something concrete to resolve against."""
+    something concrete to resolve against. History persists to disk after
+    every turn and auto-resumes on the next launch, unless start_fresh."""
     engine = QueryEngine()
     embedder = Embedder()
     store = MemoryStore()
@@ -109,8 +137,14 @@ def chat() -> None:
         print("Memory bank is empty — ingest a memory first with ingest_memory.py")
         return
 
-    print("Interactive mode. Type a query, or 'quit' to exit.\n")
-    history: list[dict] = []
+    if start_fresh and CHAT_HISTORY_PATH.exists():
+        CHAT_HISTORY_PATH.unlink()
+
+    history = _load_history()
+    if history:
+        print(f"Resumed conversation ({len(history) // 2} prior turn(s)). Use --new to start fresh.\n")
+    else:
+        print("Interactive mode. Type a query, or 'quit' to exit.\n")
 
     while True:
         raw_query = input("> ").strip()
@@ -123,6 +157,7 @@ def chat() -> None:
         # what was actually found — not just the cleaned query text.
         history.append({"role": "user", "content": raw_query})
         history.append({"role": "assistant", "content": _summarize_for_history(result, results)})
+        _save_history(history)  # persist after every turn, so a crash mid-chat doesn't lose context
         print()
 
 
@@ -132,10 +167,13 @@ def main() -> None:
         "query", nargs="?", default=None, help="Natural-language request, e.g. 'revisit my 18th birthday'"
     )
     parser.add_argument("--chat", action="store_true", help="Interactive multi-turn mode with follow-up support.")
+    parser.add_argument(
+        "--new", action="store_true", help="With --chat: clear any saved conversation and start fresh."
+    )
     args = parser.parse_args()
 
     if args.chat:
-        chat()
+        chat(start_fresh=args.new)
     elif args.query:
         query(args.query)
     else:
