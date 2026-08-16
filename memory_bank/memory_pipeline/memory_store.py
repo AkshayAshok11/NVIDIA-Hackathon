@@ -139,5 +139,31 @@ class MemoryStore:
 
         return results
 
+    def get_memory(self, memory_id: str) -> Memory:
+        """Look up a memory by its id. Raises KeyError if it doesn't exist —
+        callers should catch this or check `memory_id in store.memories`
+        first if a missing id is a normal/expected case."""
+        return self.memories[memory_id]
+
+    def set_scene_path(self, memory_id: str, scene_path: str) -> Memory:
+        """
+        Attach (or update) a memory's .splat scene path after the fact.
+
+        This exists because ingestion (VLM captioning + embedding) and 3D
+        reconstruction (gsplat training) are independent, often-parallel
+        pipelines that don't have to finish in lockstep — you can ingest a
+        memory as soon as its source video/photos exist, search for it
+        immediately, and attach the real scene_path once reconstruction
+        catches up, without re-running captioning or re-embedding anything.
+
+        Does NOT touch the embedding/vector — only the metadata changes,
+        so this is a cheap update, not a re-ingest.
+        """
+        if memory_id not in self.memories:
+            raise KeyError(f"No memory with id {memory_id!r} in the store.")
+        self.memories[memory_id].scene_path = scene_path
+        self._save()
+        return self.memories[memory_id]
+
     def __len__(self) -> int:
         return len(self.memories)

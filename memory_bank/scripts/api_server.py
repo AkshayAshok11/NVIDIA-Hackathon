@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from memory_pipeline import config, gpu_swap
@@ -99,12 +99,41 @@ class TurnResponse(BaseModel):
     scores: list[dict]  # [{"note": ..., "score": ...}, ...] top candidates
     memory_id: str | None = None
     scene_path: str | None = None
+    caption: str | None = None  # full VLM-generated caption of the matched memory
+    note: str | None = None  # the matched memory's user-written note
     candidates: list[dict] | None = None  # populated when status == "ambiguous"
+
+
+@app.get("/")
+def demo_page():
+    """Serves the demo webpage — a simple search box over /turn and /memories,
+    for showing the pipeline working live without needing the Unity build."""
+    demo_path = Path(__file__).parent / "demo.html"
+    return FileResponse(demo_path)
 
 
 @app.get("/health")
 def health():
     return {"status": "ok", "memories_in_store": len(_store)}
+
+
+@app.get("/memories")
+def list_memories():
+    """List everything currently in the memory bank — note, caption, and
+    scene path for each. This is what powers the 'here's what's actually
+    stored' view in the demo page, separate from search/retrieval."""
+    return {
+        "count": len(_store),
+        "memories": [
+            {
+                "id": mid,
+                "note": m.note,
+                "caption": m.caption,
+                "scene_path": m.scene_path,
+            }
+            for mid, m in _store.memories.items()
+        ],
+    }
 
 
 @app.post("/chat/reset")
@@ -172,6 +201,8 @@ async def turn(
     if result.status == "match":
         response.memory_id = result.memory.id
         response.scene_path = result.memory.scene_path
+        response.caption = result.memory.caption
+        response.note = result.memory.note
     elif result.status == "ambiguous":
         response.candidates = [
             {"id": m.id, "note": m.note or m.caption[:60]} for m in result.candidates

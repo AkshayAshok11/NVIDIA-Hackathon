@@ -132,3 +132,6 @@ InitTestScene*.unity*
 *.p12
 *.keystore
 *.jks
+
+# Local Gaussian splat generation outputs
+gsplat_generation/

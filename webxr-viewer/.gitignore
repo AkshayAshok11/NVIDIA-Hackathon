@@ -1,0 +1,6 @@
+*.splat
+*.ply
+__pycache__/
+*.pyc
+cert.pem
+key.pem

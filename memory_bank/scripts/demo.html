@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Timebox — Live Demo</title>
+<style>
+  :root {
+    --ink: #16141c;
+    --paper: #f6f3ec;
+    --ember: #c1502e;
+    --ember-dim: #8a3a22;
+    --line: rgba(22, 20, 28, 0.14);
+    --card: rgba(255, 255, 255, 0.03);
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100%;
+    background: var(--ink); color: var(--paper);
+    font-family: var(--sans);
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 32px 80px; }
+
+  header { margin-bottom: 36px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--ember); margin-bottom: 8px;
+  }
+  h1 { font-size: 40px; margin: 0 0 6px; font-weight: 700; }
+  .sub { color: rgba(246,243,236,0.65); font-size: 16px; }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em;
+    text-transform: uppercase; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--line); margin-top: 16px;
+  }
+  .status-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: #6db56a; }
+  .status-pill.bad .dot { background: #d3624a; }
+
+  section { margin-top: 44px; }
+  h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: rgba(246,243,236,0.5); margin: 0 0 16px; font-weight: 600;
+  }
+
+  /* Search box */
+  .search-row { display: flex; gap: 10px; }
+  input[type=text] {
+    flex: 1; background: rgba(255,255,255,0.04); border: 1px solid var(--line);
+    color: var(--paper); font-size: 17px; padding: 14px 16px; border-radius: 8px;
+    font-family: var(--sans);
+  }
+  input[type=text]:focus { outline: none; border-color: var(--ember); }
+  button {
+    font-family: var(--mono); font-size: 13px; letter-spacing: 0.06em;
+    text-transform: uppercase; background: var(--ember); color: var(--paper);
+    border: none; padding: 0 26px; border-radius: 8px; cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  button:hover:not(:disabled) { background: var(--ember-dim); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .examples { margin-top: 10px; font-size: 13px; color: rgba(246,243,236,0.45); }
+  .examples button.chip {
+    font-family: var(--sans); text-transform: none; letter-spacing: 0;
+    background: transparent; border: 1px solid var(--line); color: rgba(246,243,236,0.7);
+    padding: 5px 12px; border-radius: 999px; font-size: 13px; margin: 4px 6px 0 0;
+  }
+  .examples button.chip:hover { border-color: var(--ember); color: var(--paper); }
+
+  /* Result panel */
+  #result { margin-top: 28px; display: none; }
+  .result-card {
+    border: 1px solid var(--line); border-radius: 12px; padding: 24px;
+    background: var(--card);
+  }
+  .status-badge {
+    display: inline-block; font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px;
+    border-radius: 4px; margin-bottom: 14px;
+  }
+  .status-badge.match { background: rgba(109,181,106,0.15); color: #8fd68c; }
+  .status-badge.ambiguous { background: rgba(230,180,80,0.15); color: #e8c479; }
+  .status-badge.no_match { background: rgba(211,98,74,0.15); color: #e08a72; }
+
+  .field-label {
+    font-family: var(--mono); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: rgba(246,243,236,0.45); margin: 16px 0 4px;
+  }
+  .field-label:first-of-type { margin-top: 0; }
+  .field-value { font-size: 16px; line-height: 1.5; }
+  .caption-text { color: rgba(246,243,236,0.85); }
+
+  .score-row {
+    display: flex; align-items: center; gap: 12px; padding: 6px 0;
+    font-family: var(--mono); font-size: 14px;
+  }
+  .score-row .note { flex: 0 0 140px; color: rgba(246,243,236,0.8); }
+  .score-bar-track { flex: 1; height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+  .score-bar-fill { height: 100%; background: var(--ember); border-radius: 3px; }
+  .score-row.winner .note { color: #8fd68c; font-weight: 600; }
+  .score-row.winner .score-bar-fill { background: #6db56a; }
+  .score-num { flex: 0 0 60px; text-align: right; color: rgba(246,243,236,0.5); }
+
+  /* Stored memories grid */
+  #memories-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .memory-card {
+    border: 1px solid var(--line); border-radius: 10px; padding: 18px;
+    background: var(--card);
+  }
+  .memory-card .note-title { font-size: 17px; font-weight: 600; margin-bottom: 8px; color: var(--paper); }
+  .memory-card .caption-preview {
+    font-size: 14px; color: rgba(246,243,236,0.65); line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .memory-card .scene-tag {
+    font-family: var(--mono); font-size: 11px; color: rgba(193,80,46,0.8);
+    margin-top: 10px; word-break: break-all;
+  }
+
+  .loading { color: rgba(246,243,236,0.5); font-family: var(--mono); font-size: 13px; }
+  .error-text { color: #e08a72; font-family: var(--mono); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Timebox</div>
+    <h1>Memory pipeline — live</h1>
+    <div class="sub">Real retrieval, running against the actual memory bank on this DGX Spark. No mock data.</div>
+    <div id="status-pill" class="status-pill"><span class="dot"></span><span id="status-text">checking...</span></div>
+  </header>
+
+  <section>
+    <h2>Ask for a memory</h2>
+    <div class="search-row">
+      <input type="text" id="query-input" placeholder="e.g. show me the garden" autocomplete="off" />
+      <button id="search-btn" onclick="runSearch()">Search</button>
+    </div>
+    <div class="examples">
+      Try:
+      <button class="chip" onclick="fillAndSearch('show me the garden')">show me the garden</button>
+      <button class="chip" onclick="fillAndSearch('take me to the stump')">take me to the stump</button>
+      <button class="chip" onclick="fillAndSearch('I want to see the room')">I want to see the room</button>
+    </div>
+
+    <div id="result"></div>
+  </section>
+
+  <section>
+    <h2>What's actually stored right now</h2>
+    <div id="memories-grid"><div class="loading">Loading memory bank...</div></div>
+  </section>
+</div>
+
+<script>
+async function checkHealth() {
+  const pill = document.getElementById('status-pill');
+  const text = document.getElementById('status-text');
+  try {
+    const res = await fetch('/health');
+    const data = await res.json();
+    pill.classList.remove('bad');
+    text.textContent = `online — ${data.memories_in_store} memories in store`;
+  } catch (e) {
+    pill.classList.add('bad');
+    text.textContent = 'backend unreachable';
+  }
+}
+
+async function loadMemories() {
+  const grid = document.getElementById('memories-grid');
+  try {
+    const res = await fetch('/memories');
+    const data = await res.json();
+    if (data.count === 0) {
+      grid.innerHTML = '<div class="loading">Memory bank is empty.</div>';
+      return;
+    }
+    grid.innerHTML = data.memories.map(m => `
+      <div class="memory-card">
+        <div class="note-title">${escapeHtml(m.note || '(no note)')}</div>
+        <div class="caption-preview">${escapeHtml(m.caption)}</div>
+        <div class="scene-tag">${m.scene_path ? escapeHtml(m.scene_path.split('/').pop()) : 'no scene attached'}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    grid.innerHTML = `<div class="error-text">Could not load memory bank: ${e.message}</div>`;
+  }
+}
+
+function fillAndSearch(text) {
+  document.getElementById('query-input').value = text;
+  runSearch();
+}
+
+async function runSearch() {
+  const input = document.getElementById('query-input');
+  const btn = document.getElementById('search-btn');
+  const resultEl = document.getElementById('result');
+  const query = input.value.trim();
+  if (!query) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Searching...';
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = '<div class="loading">Transcribing → reasoning → embedding → searching...</div>';
+
+  try {
+    const form = new FormData();
+    form.append('text', query);
+    const res = await fetch('/turn', { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (!res.ok) {
+      resultEl.innerHTML = `<div class="error-text">${escapeHtml(data.detail || 'Request failed')}</div>`;
+      return;
+    }
+
+    renderResult(data);
+  } catch (e) {
+    resultEl.innerHTML = `<div class="error-text">Error: ${escapeHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Search';
+  }
+}
+
+function renderResult(data) {
+  const resultEl = document.getElementById('result');
+  const maxScore = Math.max(...data.scores.map(s => Math.abs(s.score)), 0.01);
+
+  const scoresHtml = data.scores.map((s, i) => {
+    const isWinner = i === 0 && data.status === 'match';
+    const pct = Math.max(0, (s.score / maxScore) * 100);
+    return `
+      <div class="score-row ${isWinner ? 'winner' : ''}">
+        <div class="note">${escapeHtml(s.note)}</div>
+        <div class="score-bar-track"><div class="score-bar-fill" style="width:${pct}%"></div></div>
+        <div class="score-num">${s.score.toFixed(3)}</div>
+      </div>
+    `;
+  }).join('');
+
+  let matchDetail = '';
+  if (data.status === 'match') {
+    matchDetail = `
+      <div class="field-label">Matched memory</div>
+      <div class="field-value">${escapeHtml(data.note || '')}</div>
+      <div class="field-label">Caption (auto-generated by the VLM)</div>
+      <div class="field-value caption-text">${escapeHtml(data.caption || '')}</div>
+    `;
+  }
+
+  resultEl.innerHTML = `
+    <div class="result-card">
+      <span class="status-badge ${data.status}">${data.status.replace('_', ' ')}</span>
+
+      <div class="field-label">Cleaned query</div>
+      <div class="field-value">${escapeHtml(data.cleaned_query)}</div>
+
+      <div class="field-label">Similarity scores</div>
+      ${scoresHtml}
+
+      ${matchDetail}
+
+      <div class="field-label">Response</div>
+      <div class="field-value">${escapeHtml(data.response_text)}</div>
+    </div>
+  `;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+document.getElementById('query-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') runSearch();
+});
+
+checkHealth();
+loadMemories();
+</script>
+
+</body>
+</html>

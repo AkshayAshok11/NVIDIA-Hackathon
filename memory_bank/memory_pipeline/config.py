@@ -13,7 +13,8 @@ Confirmed working services on the Veriton (as of tonight's deployment):
 
 VLM requires NIM_KV_CACHE_PERCENT=0.6 (not the documented --gpu-memory-utilization
 flag, which this NIM silently ignores) to coexist with Embed/ASR in GPU memory —
-see memory_pipeline/gpu_swap.py for the coexistence-with-fallback logic.
+see memory_pipeline/gpu_swap.py. A healthy sibling is never stopped just because
+the other service is slow to come up.
 """
 
 import os
