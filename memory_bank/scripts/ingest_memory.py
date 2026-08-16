@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from memory_pipeline import gpu_swap
 from memory_pipeline.embedder import Embedder
 from memory_pipeline.memory_store import MemoryStore
 from memory_pipeline.video_utils import extract_frames
@@ -30,11 +31,13 @@ def ingest(video_path: str, note: str, scene_path: str | None = None) -> None:
     print(f"      -> {len(frames)} frames sampled")
 
     print("[2/4] Captioning with local VLM ...")
+    gpu_swap.ensure_vlm_active()
     captioner = VLMCaptioner()
     caption = captioner.caption_frames(frames, user_note=note)
     print(f"      -> caption: {caption[:120]}{'...' if len(caption) > 120 else ''}")
 
     print("[3/4] Embedding note + caption with local Embed model ...")
+    gpu_swap.ensure_embed_active()
     embedder = Embedder()
     searchable_text = " | ".join(p for p in [note, caption] if p)
     embedding = embedder.embed_document(searchable_text)

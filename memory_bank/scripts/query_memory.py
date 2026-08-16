@@ -17,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from memory_pipeline import gpu_swap
 from memory_pipeline.embedder import Embedder
 from memory_pipeline.memory_store import MemoryStore
 from memory_pipeline.query_engine import QueryEngine
@@ -36,6 +37,7 @@ def query(raw_query: str) -> None:
     print(f"      -> cleaned: '{clean}'")
 
     print("[2/3] Embedding query and searching memory bank ...")
+    gpu_swap.ensure_embed_active()
     query_vec = embedder.embed_query(clean)
     results = store.search(query_vec)
     for memory, score in results:

@@ -20,12 +20,12 @@ from pathlib import Path
 
 # --- Model endpoints (all local) ---------------------------------------
 VLM_BASE_URL = os.environ.get("TIMEBOX_VLM_URL", "http://localhost:8001/v1")
-VLM_MODEL_NAME = os.environ.get("TIMEBOX_VLM_MODEL", "nemotron-nano-vl")
+VLM_MODEL_NAME = os.environ.get("TIMEBOX_VLM_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning")
 
 EMBED_BASE_URL = os.environ.get("TIMEBOX_EMBED_URL", "http://localhost:8002/v1")
 EMBED_MODEL_NAME = os.environ.get("TIMEBOX_EMBED_MODEL", "nvidia/nemotron-3-embed-1b")
 
-LIGHTNING_BASE_URL = os.environ.get("TIMEBOX_LIGHTNING_URL", "http://localhost:8003/v1")
+LIGHTNING_BASE_URL = os.environ.get("TIMEBOX_LIGHTNING_URL", "http://localhost:11434/v1")
 LIGHTNING_MODEL_NAME = os.environ.get(
     "TIMEBOX_LIGHTNING_MODEL", "nemotron-3.5-lightning"
 )
