@@ -34,12 +34,13 @@ class Memory:
     caption: str
     video_path: str
     scene_path: str | None = None  # pointer to the trained 3D Gaussian splat scene
+    enrichment: str = ""  # Lightning-generated alternative phrasings, widens retrieval surface area
     created_at: float = field(default_factory=time.time)
 
     @property
     def searchable_text(self) -> str:
-        """What actually gets embedded: note + caption combined."""
-        parts = [p for p in [self.note, self.caption] if p]
+        """What actually gets embedded: note + caption + enrichment combined."""
+        parts = [p for p in [self.note, self.caption, self.enrichment] if p]
         return " | ".join(parts)
 
 
@@ -98,16 +99,18 @@ class MemoryStore:
         video_path: str,
         embedding: np.ndarray,
         scene_path: str | None = None,
+        enrichment: str = "",
     ) -> Memory:
         """Add a new memory to the bank. `embedding` should be the vector for
-        the memory's searchable_text (note + caption), produced by
-        Embedder.embed_document()."""
+        the memory's searchable_text (note + caption + enrichment), produced
+        by Embedder.embed_document()."""
         memory = Memory(
             id=str(uuid.uuid4()),
             note=note,
             caption=caption,
             video_path=str(video_path),
             scene_path=scene_path,
+            enrichment=enrichment,
         )
 
         vec = self._normalize(embedding).reshape(1, -1).astype(np.float32)

@@ -76,6 +76,52 @@ class QueryEngine:
         # which rejects blank input outright.
         return cleaned if cleaned else raw_query
 
+    def enrich_memory_text(self, note: str, caption: str) -> str:
+        """
+        Generate 2-3 alternative phrasings of what this memory is about,
+        beyond the literal note + caption. This widens the text that gets
+        embedded, so retrieval doesn't depend entirely on the user's note
+        being detailed or the VLM caption happening to share wording with
+        a future query.
+
+        Concretely: a thin note like "bday" plus a caption describing cake
+        and balloons might not embed close to a query like "revisit my
+        18th birthday" if neither text ever says "18th" or "birthday"
+        explicitly. Lightning can bridge that gap — inferring the likely
+        occasion/context from what's described and phrasing it the way a
+        person might actually ask for it later.
+
+        Returns the alternative phrasings only (not the original note/
+        caption) — callers combine this with the original text themselves,
+        so this function's failure mode (empty string) never loses the
+        original searchable content.
+        """
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "A user is archiving a personal memory in a video diary app. "
+                        "Given their note and an auto-generated caption describing the "
+                        "video, write 2-3 short alternative phrases someone might use "
+                        "later to search for this memory — different wording, inferred "
+                        "occasion/context if reasonably clear, synonyms. One phrase per "
+                        "line. No numbering, no explanation, no quotes. If the note and "
+                        "caption are too vague to infer anything beyond what's already "
+                        "stated, output nothing."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Note: {note or '(none)'}\nCaption: {caption}",
+                },
+            ],
+            max_tokens=300,
+            temperature=0.5,
+        )
+        return response.choices[0].message.content.strip()
+
     def resolve_results(
         self, raw_query: str, results: list[tuple[Memory, float]]
     ) -> QueryResult:

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Timebox — Memory Viewer</title>
+<style>
+  :root {
+    --ink: #16141c;
+    --paper: #f6f3ec;
+    --ember: #c1502e;
+    --ember-dim: #8a3a22;
+    --line: rgba(22, 20, 28, 0.12);
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--sans);
+    overflow: hidden;
+  }
+
+  #scene-canvas {
+    position: fixed;
+    inset: 0;
+    display: block;
+    outline: none;
+  }
+
+  #hud {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 20px 24px;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  #brand {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--paper);
+    opacity: 0.85;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  #brand .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ember);
+    display: inline-block;
+    box-shadow: 0 0 8px var(--ember);
+  }
+
+  #memory-label {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--paper);
+    background: rgba(22, 20, 28, 0.55);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 8px 14px;
+    max-width: 320px;
+    text-align: right;
+    pointer-events: auto;
+  }
+
+  #memory-label .note {
+    color: var(--ember);
+    font-weight: 600;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  #enter-vr {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: var(--ember);
+    color: var(--paper);
+    border: none;
+    border-radius: 3px;
+    padding: 14px 32px;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+
+  #enter-vr:hover:not(:disabled) {
+    background: var(--ember-dim);
+    transform: translateX(-50%) translateY(-2px);
+  }
+
+  #enter-vr:disabled {
+    background: #55524f;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  #status {
+    position: fixed;
+    bottom: 84px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: rgba(246, 243, 236, 0.6);
+    text-align: center;
+    pointer-events: none;
+  }
+
+  #status.error { color: #e07856; }
+
+  #loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--ink);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    transition: opacity 0.4s ease;
+  }
+
+  #loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #loading-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ember);
+    margin-bottom: 18px;
+  }
+
+  #loading-bar-track {
+    width: 220px;
+    height: 2px;
+    background: var(--line);
+    position: relative;
+    overflow: hidden;
+  }
+
+  #loading-bar-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0%;
+    background: var(--ember);
+    transition: width 0.2s ease;
+  }
+
+  #loading-percent {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: rgba(246, 243, 236, 0.5);
+    margin-top: 14px;
+  }
+
+  #no-webxr-notice {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: rgba(246, 243, 236, 0.45);
+    text-align: center;
+    max-width: 380px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="loading-overlay">
+  <div id="loading-title">Loading memory</div>
+  <div id="loading-bar-track"><div id="loading-bar-fill"></div></div>
+  <div id="loading-percent">0%</div>
+</div>
+
+<canvas id="scene-canvas"></canvas>
+
+<div id="hud">
+  <div id="brand"><span class="dot"></span>TIMEBOX</div>
+  <div id="memory-label">
+    <span class="note" id="memory-note">Loading…</span>
+    <span id="memory-source"></span>
+  </div>
+</div>
+
+<button id="enter-vr" disabled>Enter VR</button>
+<div id="status">checking WebXR support…</div>
+<div id="no-webxr-notice">
+  WebXR not detected. Open this page in the Meta Quest Browser (not a desktop browser) to enter VR — desktop shows a flythrough preview only.
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module" src="./main.js"></script>
+
+</body>
+</html>
