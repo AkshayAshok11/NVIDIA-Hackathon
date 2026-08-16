@@ -1,0 +1,3 @@
+[submodule "gsplat_generation/scripts/gsplat_repo"]
+	path = gsplat_generation/scripts/gsplat_repo
+	url = https://github.com/nerfstudio-project/gsplat.git

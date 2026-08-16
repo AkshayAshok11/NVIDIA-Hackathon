@@ -116,6 +116,21 @@ InitTestScene*.unity*
 
 # Point cloud / Gaussian splat exports - large binary files, don't belong in git
 *.ply
+*.pt
+*.splat
+
+# Python
+__pycache__/
+*.pyc
+
+# Gaussian splat generation: track scripts + the gsplat submodule.
+# Ignore source videos, extracted frames, and pipeline/run outputs.
+gsplat_generation/*.MOV
+gsplat_generation/*.mp4
+gsplat_generation/pipeline/
+gsplat_generation/gsplat_run/
+gsplat_generation/room/
+gsplat_generation/stump/
 
 # macOS
 .DS_Store
@@ -132,6 +147,3 @@ InitTestScene*.unity*
 *.p12
 *.keystore
 *.jks
-
-# Local Gaussian splat generation outputs
-gsplat_generation/

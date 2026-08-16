@@ -1,0 +1,434 @@
+<title>Great Wall Splat</title>
+<style>
+  :root {
+    --ground: #0b0f16;
+    --surface: #12181f;
+    --surface-2: #171e27;
+    --ink: #e8e2d4;
+    --ink-dim: #8b93a1;
+    --accent: #d68a3c;
+    --accent-dim: #8a5a2a;
+    --line: rgba(232, 226, 212, 0.12);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--ground);
+    overflow: hidden;
+    font-family: -apple-system, "Segoe UI", "Inter", system-ui, sans-serif;
+    color: var(--ink);
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    cursor: grab;
+  }
+  canvas.dragging { cursor: grabbing; }
+
+  .hud {
+    position: fixed;
+    top: 18px;
+    left: 18px;
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    max-width: min(320px, calc(100vw - 36px));
+    pointer-events: none;
+    animation: rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .eyebrow {
+    font-size: 10.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .title {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 10px;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 3px 12px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    border-top: 1px solid var(--line);
+    padding-top: 9px;
+  }
+  .stats dt { color: var(--ink-dim); margin: 0; }
+  .stats dd { margin: 0; color: var(--ink); text-align: right; }
+
+  .hint {
+    position: fixed;
+    bottom: 18px;
+    left: 18px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: color-mix(in srgb, var(--surface) 70%, transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 11.5px;
+    color: var(--ink-dim);
+    pointer-events: none;
+    animation: rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+  }
+  .hint kbd {
+    font-family: ui-monospace, monospace;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 6px;
+    color: var(--ink);
+    font-size: 10.5px;
+  }
+
+  .loading {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--ground);
+    transition: opacity 0.5s ease;
+    z-index: 10;
+  }
+  .loading.hidden { opacity: 0; pointer-events: none; }
+  .loading .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.25; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.15); }
+  }
+  .loading .label {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hud, .hint { animation: none; }
+  }
+</style>
+
+<div class="loading" id="loading">
+  <div class="dot"></div>
+  <div class="label">Decoding point cloud&hellip;</div>
+</div>
+
+<canvas id="gl"></canvas>
+
+<div class="hud">
+  <p class="eyebrow">Timebox &middot; Reconstruction</p>
+  <h1 class="title">Great Wall, Jinshanling</h1>
+  <dl class="stats">
+    <dt>Gaussians</dt><dd id="stat-n">&mdash;</dd>
+    <dt>Source</dt><dd>24 frames, VGGT+gsplat</dd>
+    <dt>Frame</dt><dd id="stat-fps">&mdash;</dd>
+  </dl>
+</div>
+
+<div class="hint"><kbd>drag</kbd> orbit &nbsp;&middot;&nbsp; <kbd>scroll</kbd> zoom</div>
+
+<script>
+"use strict";
+
+// ---------- decode embedded splat data ----------
+const B64 = "__SPLAT_DATA_BASE64__";
+
+function base64ToBytes(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+const raw = base64ToBytes(B64);
+const dv = new DataView(raw.buffer);
+const N = dv.getUint32(0, true);
+const STRIDE = 20; // pos(12) + radius(4) + rgb(3) + opacity(1)
+const pointsBuf = raw.buffer.slice(4, 4 + N * STRIDE);
+const dvPoints = new DataView(pointsBuf);
+
+document.getElementById("stat-n").textContent = N.toLocaleString("en-US");
+
+// depths scratch buffer, recomputed on camera change
+const depths = new Float32Array(N);
+function getPos(i, out) {
+  const o = i * STRIDE;
+  out[0] = dvPoints.getFloat32(o, true);
+  out[1] = dvPoints.getFloat32(o + 4, true);
+  out[2] = dvPoints.getFloat32(o + 8, true);
+}
+
+// ---------- WebGL2 setup ----------
+const canvas = document.getElementById("gl");
+const gl = canvas.getContext("webgl2", { antialias: true, alpha: false, powerPreference: "high-performance" });
+if (!gl) {
+  document.getElementById("loading").innerHTML = '<div class="label">WebGL2 is not available in this browser.</div>';
+  throw new Error("no webgl2");
+}
+
+const VERT_SRC = `#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in float aRadius;
+layout(location=2) in vec4 aColor; // rgb + opacity, normalized ubyte
+uniform mat4 uView;
+uniform mat4 uProj;
+uniform float uViewportHeight;
+out vec4 vColor;
+void main() {
+  vec4 viewPos = uView * vec4(aPos, 1.0);
+  float dist = max(-viewPos.z, 0.001);
+  float focalPx = 0.5 * uViewportHeight * uProj[1][1];
+  float sizePx = (aRadius * 2.0) * focalPx / dist;
+  gl_PointSize = clamp(sizePx, 1.0, 200.0);
+  gl_Position = uProj * viewPos;
+  vColor = aColor;
+}`;
+
+const FRAG_SRC = `#version 300 es
+precision highp float;
+in vec4 vColor;
+out vec4 outColor;
+void main() {
+  vec2 c = gl_PointCoord * 2.0 - 1.0;
+  float d2 = dot(c, c);
+  if (d2 > 1.0) discard;
+  float falloff = exp(-d2 * 4.0);
+  float a = vColor.a * falloff;
+  outColor = vec4(vColor.rgb * a, a);
+}`;
+
+function compile(type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(sh));
+  }
+  return sh;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT_SRC));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG_SRC));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+  throw new Error(gl.getProgramInfoLog(prog));
+}
+gl.useProgram(prog);
+
+const uView = gl.getUniformLocation(prog, "uView");
+const uProj = gl.getUniformLocation(prog, "uProj");
+const uViewportHeight = gl.getUniformLocation(prog, "uViewportHeight");
+
+const vbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, pointsBuf, gl.STATIC_DRAW);
+
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 3, gl.FLOAT, false, STRIDE, 0);
+gl.enableVertexAttribArray(1);
+gl.vertexAttribPointer(1, 1, gl.FLOAT, false, STRIDE, 12);
+gl.enableVertexAttribArray(2);
+gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, true, STRIDE, 16);
+
+const ibo = gl.createBuffer();
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+const indexInit = new Uint32Array(N);
+for (let i = 0; i < N; i++) indexInit[i] = i;
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexInit, gl.DYNAMIC_DRAW);
+
+gl.disable(gl.DEPTH_TEST);
+gl.enable(gl.BLEND);
+gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+gl.clearColor(0.043, 0.059, 0.086, 1.0); // matches --ground
+
+// ---------- tiny mat4 helpers (no external deps) ----------
+function perspective(out, fovy, aspect, near, far) {
+  const f = 1.0 / Math.tan(fovy / 2);
+  out.set([
+    f / aspect, 0, 0, 0,
+    0, f, 0, 0,
+    0, 0, (far + near) / (near - far), -1,
+    0, 0, (2 * far * near) / (near - far), 0,
+  ]);
+  return out;
+}
+function lookAt(out, eye, target, up) {
+  let zx = eye[0] - target[0], zy = eye[1] - target[1], zz = eye[2] - target[2];
+  let len = Math.hypot(zx, zy, zz) || 1; zx /= len; zy /= len; zz /= len;
+  let xx = up[1] * zz - up[2] * zy, xy = up[2] * zx - up[0] * zz, xz = up[0] * zy - up[1] * zx;
+  len = Math.hypot(xx, xy, xz) || 1; xx /= len; xy /= len; xz /= len;
+  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  out.set([
+    xx, yx, zx, 0,
+    xy, yy, zy, 0,
+    xz, yz, zz, 0,
+    -(xx * eye[0] + xy * eye[1] + xz * eye[2]),
+    -(yx * eye[0] + yy * eye[1] + yz * eye[2]),
+    -(zx * eye[0] + zy * eye[1] + zz * eye[2]),
+    1,
+  ]);
+  return out;
+}
+
+// ---------- orbit camera ----------
+let azimuth = 0.6, elevation = 0.42, radius = 3.4;
+const target = [-0.1, -0.05, 0.6];
+let autoRotate = true;
+let dragging = false, lastX = 0, lastY = 0;
+
+canvas.addEventListener("pointerdown", (e) => {
+  dragging = true; autoRotate = false;
+  lastX = e.clientX; lastY = e.clientY;
+  canvas.setPointerCapture(e.pointerId);
+  canvas.classList.add("dragging");
+});
+canvas.addEventListener("pointerup", (e) => {
+  dragging = false;
+  canvas.classList.remove("dragging");
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  azimuth -= dx * 0.006;
+  elevation = Math.max(-1.4, Math.min(1.4, elevation - dy * 0.006));
+});
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  autoRotate = false;
+  radius = Math.max(0.4, Math.min(12, radius * (1 + e.deltaY * 0.001)));
+}, { passive: false });
+
+const viewMat = new Float32Array(16);
+const projMat = new Float32Array(16);
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.floor(canvas.clientWidth * dpr);
+  const h = Math.floor(canvas.clientHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w; canvas.height = h;
+  }
+}
+
+// ---------- back-to-front bucket sort ----------
+const BUCKETS = 1024;
+const bucketCount = new Int32Array(BUCKETS + 1);
+const sortedIdx = new Uint32Array(N);
+const posScratch = [0, 0, 0];
+const fwd = [0, 0, 0];
+
+function sortByDepth(eye, forward) {
+  let minD = Infinity, maxD = -Infinity;
+  for (let i = 0; i < N; i++) {
+    getPos(i, posScratch);
+    const dx = posScratch[0] - eye[0], dy = posScratch[1] - eye[1], dz = posScratch[2] - eye[2];
+    const d = dx * forward[0] + dy * forward[1] + dz * forward[2];
+    depths[i] = d;
+    if (d < minD) minD = d;
+    if (d > maxD) maxD = d;
+  }
+  const range = Math.max(maxD - minD, 1e-6);
+  bucketCount.fill(0);
+  const bIdx = new Int32Array(N);
+  for (let i = 0; i < N; i++) {
+    // forward points from eye into the scene, so larger depths[i] = farther from camera.
+    // invert here so bucket 0 = farthest, last bucket = nearest -> scatter gives far-to-near
+    // draw order directly (painter's algorithm, required since depth test is disabled).
+    let b = Math.floor(((maxD - depths[i]) / range) * (BUCKETS - 1));
+    if (b < 0) b = 0; if (b > BUCKETS - 1) b = BUCKETS - 1;
+    bIdx[i] = b;
+    bucketCount[b]++;
+  }
+  const offsets = new Int32Array(BUCKETS + 1);
+  for (let b = 0; b < BUCKETS; b++) offsets[b + 1] = offsets[b] + bucketCount[b];
+  const cursor = offsets.slice(0, BUCKETS);
+  for (let i = 0; i < N; i++) {
+    const b = bIdx[i];
+    sortedIdx[cursor[b]++] = i;
+  }
+  return sortedIdx;
+}
+
+let frameCount = 0, lastFpsT = performance.now(), fpsAccum = 0;
+
+function render(now) {
+  resize();
+  gl.viewport(0, 0, canvas.width, canvas.height);
+
+  if (autoRotate) azimuth += 0.0018;
+
+  const eye = [
+    target[0] + radius * Math.cos(elevation) * Math.sin(azimuth),
+    target[1] + radius * Math.sin(elevation),
+    target[2] + radius * Math.cos(elevation) * Math.cos(azimuth),
+  ];
+  lookAt(viewMat, eye, target, [0, 1, 0]);
+  const aspect = canvas.width / Math.max(canvas.height, 1);
+  perspective(projMat, 50 * Math.PI / 180, aspect, 0.05, 50);
+
+  fwd[0] = target[0] - eye[0]; fwd[1] = target[1] - eye[1]; fwd[2] = target[2] - eye[2];
+  const flen = Math.hypot(fwd[0], fwd[1], fwd[2]) || 1;
+  fwd[0] /= flen; fwd[1] /= flen; fwd[2] /= flen;
+
+  const order = sortByDepth(eye, fwd);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+  gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, order);
+
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.useProgram(prog);
+  gl.uniformMatrix4fv(uView, false, viewMat);
+  gl.uniformMatrix4fv(uProj, false, projMat);
+  gl.uniform1f(uViewportHeight, canvas.height);
+  gl.bindVertexArray(vao);
+  gl.drawElements(gl.POINTS, N, gl.UNSIGNED_INT, 0);
+
+  frameCount++;
+  fpsAccum += now - lastFpsT;
+  lastFpsT = now;
+  if (fpsAccum > 400) {
+    const fps = 1000 / (fpsAccum / frameCount);
+    document.getElementById("stat-fps").textContent = fps.toFixed(0) + " fps";
+    frameCount = 0; fpsAccum = 0;
+  }
+
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(() => {
+  document.getElementById("loading").classList.add("hidden");
+  requestAnimationFrame(render);
+});
+</script>
