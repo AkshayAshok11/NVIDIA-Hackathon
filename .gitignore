@@ -147,3 +147,7 @@ gsplat_generation/stump/
 *.p12
 *.keystore
 *.jks
+
+# ...except the checked-in sample env files (no real secrets, just var names)
+!.env.example
+!**/.env.example
